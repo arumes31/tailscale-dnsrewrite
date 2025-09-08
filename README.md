@@ -2,6 +2,9 @@
 
 Tailscale DNS Server to override dns entries and forward to specificed upstream in static order
 
+DNS Queries: Client -> Tailscale DNS Rewrite -> Adguard 
+Example: mail.example.com resolves to 192.168.3.100 on AdGuard but should resolve to the tailscale ip for all tailcale clients
+
 ## Features
 
 - **Tailscale Integration**: Operates over a Tailscale network, using the container's Tailscale IP for secure DNS resolution.
