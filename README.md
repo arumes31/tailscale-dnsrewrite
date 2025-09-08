@@ -44,7 +44,7 @@ services:
     image: tailscale-dnsrewrite:latest
     container_name: dns-tailscale-1
     environment:
-      - DOMAINS=.reitetschlaeger.com:100.77.35.105,ts3-r1.wowcraft.pw:100.83.17.42
+      - DOMAINS=.overridedomain.local:100.77.35.105,override1.example.com:100.83.17.42
       - UPSTREAM_DNS=100.77.35.105 100.68.143.42
       - TS_AUTHKEY=tskey-auth-xxxxx
     restart: unless-stopped
