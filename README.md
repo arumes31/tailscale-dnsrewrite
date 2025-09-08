@@ -50,6 +50,7 @@ services:
       - DOMAINS=.overridedomain.local:100.77.35.105,override1.example.com:100.83.17.42
       - UPSTREAM_DNS=100.77.35.105 100.68.143.42
       - TS_AUTHKEY=tskey-auth-xxxxx
+      - HEALTHCHECK_DOMAIN=google.com
     restart: unless-stopped
 ```
 

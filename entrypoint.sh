@@ -3,6 +3,9 @@
 # Default upstream DNS servers if not provided
 UPSTREAM_DNS=${UPSTREAM_DNS:-"8.8.8.8 8.8.4.4"}
 
+# Default health check domain if not provided
+HEALTHCHECK_DOMAIN=${HEALTHCHECK_DOMAIN:-"google.com"}
+
 # Start tailscaled
 echo "Starting tailscaled"
 /usr/sbin/tailscaled --state=/var/lib/tailscale/tailscaled.state --socket=/var/run/tailscale/tailscaled.sock &
@@ -63,7 +66,7 @@ echo "Tailscale IP: $TAILSCALE_IP"
 # Function to check upstream DNS server health
 check_upstream() {
     local server=$1
-    dig @${server} google.com +timeout=2 +tries=1 >/dev/null 2>&1
+    dig @${server} $HEALTHCHECK_DOMAIN +timeout=2 +tries=1 >/dev/null 2>&1
     return $?
 }
 
@@ -109,7 +112,7 @@ EOL
 UPSTREAMS=($UPSTREAM_DNS)
 HEALTHY_UPSTREAMS=()
 for ups in "${UPSTREAMS[@]}"; do
-    echo "Checking upstream DNS server: $ups"
+    echo "Checking upstream DNS server: $ups using domain: $HEALTHCHECK_DOMAIN"
     if check_upstream "$ups"; then
         echo "Upstream $ups is healthy"
         HEALTHY_UPSTREAMS+=("$ups")
