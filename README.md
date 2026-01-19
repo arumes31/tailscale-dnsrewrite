@@ -23,8 +23,8 @@ Example: mail.example.com resolves to 192.168.3.100 on AdGuard but should resolv
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/your-username/tailscale-dns-server.git
-   cd tailscale-dns-server
+   git clone https://github.com/arumes31/tailscale-dnsrewrite.git
+   cd tailscale-dnsrewrite
    ```
 
 2. Ensure the following files are present:
@@ -44,7 +44,7 @@ Edit the `docker-compose.yaml` to set environment variables:
 ```yaml
 services:
   dns-tailscale-1:
-    image: tailscale-dnsrewrite:latest
+    image: ghcr.io/arumes31/tailscale-dnsrewrite:latest
     container_name: dns-tailscale-1
     environment:
       - DOMAINS=.overridedomain.local:100.77.35.105,override1.example.com:100.83.17.42
@@ -91,11 +91,11 @@ services:
 
 - **DNS resolution fails**:
   - Check logs: `docker logs dns-tailscale-1 | grep -i "error\|warning\|fail\|timeout"`.
-  - Verify upstream servers: `dig @<UPSTREAM_IP> google.com` inside the container (`docker exec -it dns-tailscale-1 /bin/bash`).
-  - Ensure Tailscale is connected: `docker exec -it dns-tailscale-1 tailscale status`.
+  - Verify upstream servers: `dig @<UPSTREAM_IP> google.com` inside the container (`docker exec -it dns-tailscale-1 /bin/sh`).
+  - Ensure Tailscale is connected: `docker exec -it dns-tailscale-1 /usr/bin/tailscale status`.
 - **No healthy upstreams**:
   - Add public DNS servers (e.g., `8.8.8.8`) to `UPSTREAM_DNS` as fallback.
-  - Check Tailscale connectivity to upstream IPs: `docker exec -it dns-tailscale-1 tailscale ping <UPSTREAM_IP>`.
+  - Check Tailscale connectivity to upstream IPs: `docker exec -it dns-tailscale-1 /usr/bin/tailscale ping <UPSTREAM_IP>`.
 - **Tailscale IP changes**:
   - Restart the container: `docker-compose restart`.
 - **View dnsmasq config**:
