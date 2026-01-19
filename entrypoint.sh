@@ -6,6 +6,15 @@ UPSTREAM_DNS=${UPSTREAM_DNS:-"8.8.8.8 8.8.4.4"}
 # Default health check domain if not provided
 HEALTHCHECK_DOMAIN=${HEALTHCHECK_DOMAIN:-"google.com"}
 
+# Cleanup function for graceful shutdown
+cleanup() {
+    echo "Shutting down..."
+    kill "$DNSMASQ_PID" "$TAILSCALED_PID" 2>/dev/null
+    exit 0
+}
+
+trap cleanup SIGINT SIGTERM
+
 # Start tailscaled
 echo "Starting tailscaled"
 /usr/sbin/tailscaled --state=/var/lib/tailscale/tailscaled.state --socket=/var/run/tailscale/tailscaled.sock &
@@ -56,12 +65,6 @@ else
     exit 1
 fi
 
-if [ -z "$TAILSCALE_IP" ]; then
-    echo "Error: Could not determine Tailscale IP"
-    exit 1
-fi
-echo "Tailscale IP: $TAILSCALE_IP"
-
 # Function to check upstream DNS server health
 check_upstream() {
     local server=$1
@@ -108,7 +111,7 @@ EOL
 }
 
 # Initial health check
-UPSTREAMS=($UPSTREAM_DNS)
+IFS=' ' read -r -a UPSTREAMS <<< "$UPSTREAM_DNS"
 HEALTHY_UPSTREAMS=()
 for ups in "${UPSTREAMS[@]}"; do
     echo "Checking upstream DNS server: $ups using domain: $HEALTHCHECK_DOMAIN"
@@ -136,7 +139,7 @@ DNSMASQ_PID=$!
 
 # Verify dnsmasq is running
 sleep 1
-if ! ps -p $DNSMASQ_PID > /dev/null; then
+if ! kill -0 $DNSMASQ_PID > /dev/null 2>&1; then
     echo "Error: dnsmasq failed to start"
     exit 1
 fi
