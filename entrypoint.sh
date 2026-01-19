@@ -27,7 +27,7 @@ if [ ! -S /var/run/tailscale/tailscaled.sock ]; then
 fi
 
 # Check if Tailscale is already connected
-if /usr/bin/tailscale status | grep -q "Connected"; then
+if /usr/bin/tailscale ip -4 | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' >/dev/null 2>&1; then
     echo "Tailscale is already connected"
 else
     # Run tailscale up if TS_AUTHKEY is provided
@@ -48,15 +48,14 @@ fi
 
 # Verify Tailscale status
 /usr/bin/tailscale status
-if /usr/bin/tailscale status | grep -q "Connected"; then
-    echo "Tailscale is connected"
+TAILSCALE_IP=$(/usr/bin/tailscale ip -4 | head -n 1)
+if [ -n "$TAILSCALE_IP" ]; then
+    echo "Tailscale is connected (IP: $TAILSCALE_IP)"
 else
     echo "Error: Tailscale is not connected"
-    #exit 1
+    exit 1
 fi
 
-# Get the Tailscale IP
-TAILSCALE_IP=$(/usr/bin/tailscale ip | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1)
 if [ -z "$TAILSCALE_IP" ]; then
     echo "Error: Could not determine Tailscale IP"
     exit 1
