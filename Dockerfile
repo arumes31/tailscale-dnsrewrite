@@ -1,19 +1,13 @@
-FROM ubuntu:24.04
+FROM alpine:latest
 
 # Install dependencies
-RUN apt-get update && apt-get install -y \
+RUN apk add --no-cache \
     dnsmasq \
     curl \
-    dnsutils \
-    iputils-ping \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Tailscale
-RUN curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/jammy.noarmor.gpg | tee /usr/share/keyrings/tailscale-archive-keyring.gpg >/dev/null \
-    && curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/jammy.tailscale-keyring.list | tee /etc/apt/sources.list.d/tailscale.list \
-    && apt-get update \
-    && apt-get install -y tailscale \
-    && rm -rf /var/lib/apt/lists/*
+    bind-tools \
+    iputils \
+    bash \
+    tailscale
 
 # Copy configuration and scripts
 COPY entrypoint.sh /entrypoint.sh
