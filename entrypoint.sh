@@ -136,7 +136,7 @@ DNSMASQ_PID=$!
 
 # Verify dnsmasq is running
 sleep 1
-if ! ps -p $DNSMASQ_PID > /dev/null; then
+if ! kill -0 $DNSMASQ_PID > /dev/null 2>&1; then
     echo "Error: dnsmasq failed to start"
     exit 1
 fi
