@@ -1,6 +1,6 @@
 module github.com/arumes31/resolix/webgui
 
-go 1.26.5
+go 1.26.6
 
 require (
 	github.com/glebarez/go-sqlite v1.23.0
