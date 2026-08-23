@@ -156,6 +156,8 @@ Repeat this step for additional agents, changing `NODE_NAME`, `TS_AUTHKEY`, and 
 
 Open the controller's `/config` page and manage upstreams, bootstrap resolvers, DNS routes, blocklists, allowlists, custom rules, rewrites, and client policies there. These settings are stored in the dedicated `config` mount. Agents expose `/config` as read-only, periodically pull the controller's content-addressed snapshot, persist it locally, and report their applied revision. Query events and heartbeats flow back to the controller using the shared `INGEST_SECRET`.
 
+Only the controller stores durable query history in SQLite. Agents keep recent dashboard data in memory and persist only `forwarder-backlog.json`, the queue of events not yet acknowledged by the controller, with a 10 MiB hard cap. After upgrading an existing agent, verify its history is present on the controller, stop the agent, and remove the legacy `dns.db`, `dns.db-wal`, and `dns.db-shm` files from its `HISTORY_DIR` to reclaim disk space. Resolix does not delete those legacy files automatically.
+
 By default, every controller and agent serves DNS on UDP and TCP port 53. Tailnet clients can use the node's Tailscale IPv4 address and `DNS_LISTEN_PORT`; LAN clients can use the host's LAN address and `DNS_PUBLISH_PORT`. When overriding either default, clients must use the corresponding configured port. The Compose files publish DNS on all host IPv4 interfaces:
 
 ```dotenv
@@ -196,7 +198,7 @@ The proxy must preserve the `/api` paths and provide HTTPS all the way to the ag
 | Agent configuration is read-only | Expected: edit `/config` on the controller and wait for the revision to synchronize. |
 | DNS is unreachable | Confirm the configured UDP and TCP host `DNS_PUBLISH_PORT` is free, the node is connected to Tailscale, the client is in `DNS_ALLOWED_CLIENTS`, and firewall/Tailscale ACL rules permit the configured DNS ports. |
 
-Legacy `MODE=master`, `MODE=slave`, and `MASTER_URL` values are accepted for upgrades and normalized to the new names. `CONTROLLER_URL` takes precedence when both URL variables are present.
+Use `MODE=controller` or `MODE=agent`. Agents require the canonical `CONTROLLER_URL` variable.
 
 ### DNS request pipeline
 
@@ -239,7 +241,7 @@ The **Allowlists** panel accepts hosted Adblock, hosts-file, and plain-domain li
 
 | Variable | Description | Default |
 | --- | --- | --- |
-| `MODE` | `controller` or `agent`; legacy values are normalized | `controller` |
+| `MODE` | `controller` or `agent` | `controller` |
 | `CONTROLLER_URL` | HTTPS controller URL required by agents | unset |
 | `CONTROLLER_TLS_TRUST` | Agent trust mode: `system` or direct-IP `tofu-tailnet` | `system` |
 | `TLS_STATE_DIR` | Generated controller CA and agent pin directory | `/var/lib/resolix-tls` |
@@ -341,13 +343,13 @@ Rewrites created in `/config` can apply to every client, only Tailscale address 
 
 | Variable | Description | Default |
 | --- | --- | --- |
-| `HISTORY_DIR` | SQLite query-history directory | `/var/lib/resolix` |
+| `HISTORY_DIR` | Controller query history; agent identity and bounded forwarding backlog | `/var/lib/resolix` |
 | `CONFIG_DIR` | Managed upstreams, routes, subscriptions, rules, rewrites, and clients | `/var/lib/resolix-config` |
-| `DB_PATH` | SQLite file name or absolute path | `dns.db` |
-| `BATCH_ARCHIVE_INTERVAL` | Maximum time between archive passes | `1m` |
-| `ARCHIVE_QUEUE_CAPACITY` | Maximum queued events during bursts/outages | `1000000` |
-| `ARCHIVE_TRIGGER_SIZE` | Pending events that wake the archiver | `5000` |
-| `ARCHIVE_WRITE_BATCH_SIZE` | Maximum rows per SQLite transaction | `20000` |
+| `DB_PATH` | Controller-only SQLite file name or absolute path; ignored by agents | `dns.db` |
+| `BATCH_ARCHIVE_INTERVAL` | Controller maximum time between archive passes | `1m` |
+| `ARCHIVE_QUEUE_CAPACITY` | Controller maximum queued events during SQLite outages | `1000000` |
+| `ARCHIVE_TRIGGER_SIZE` | Controller pending events that wake the archiver | `5000` |
+| `ARCHIVE_WRITE_BATCH_SIZE` | Controller maximum rows per SQLite transaction | `20000` |
 | `LOG_LEVEL` | `DEBUG`, `INFO`, `WARNING`, or `ERROR` | `INFO` |
 | `LOG_FILE` | Optional file log destination; empty uses stderr | unset |
 | `DEBUG` | Enable additional debug behavior | `false` |
@@ -435,15 +437,14 @@ docker compose start resolix
 
 Restore all four directories while the container is stopped, retain ownership and permissions, start the same image tag, and confirm `/readyz` before upgrading. `config` contains the settings edited in `/config`; `tls` contains the controller CA or agent pin. If `CONFIG_DIR`, `TLS_STATE_DIR`, or `CONTROLLER_TLS_PIN_FILE` points elsewhere, also back up those configured paths. These files must remain private.
 
-### Migration from the former project name
+### Deployment paths
 
-- Use `https://github.com/arumes31/resolix.git` and `ghcr.io/arumes31/resolix`. GitHub redirects the former repository URL; the former GHCR package remains frozen.
-- New deployments use `/var/lib/resolix` for query history, `/var/lib/resolix-config` for managed DNS configuration, `/var/lib/resolix-tls` for generated trust state, and `/etc/resolix` for operator-supplied certificates and absolute-path files.
-- The container automatically uses a populated legacy `/var/lib/tailscale-dnsrewrite` mount when `HISTORY_DIR` is not explicitly set and the new directory is empty.
+- Use `https://github.com/arumes31/resolix.git` and `ghcr.io/arumes31/resolix`.
+- Resolix uses `/var/lib/resolix` for query history, `/var/lib/resolix-config` for managed DNS configuration, `/var/lib/resolix-tls` for generated trust state, and `/etc/resolix` for operator-supplied certificates and absolute-path files.
+- The runtime does not inspect former project-name mounts or environment aliases. Move any required state into the Resolix directories while the service is stopped, then use `MODE=controller` or `MODE=agent` and `CONTROLLER_URL`.
 - On first start with the dedicated `config` mount, Resolix copies managed settings from the active `HISTORY_DIR` when their destinations are absent. Existing files in `CONFIG_DIR` always win, and recovery copies remain in history.
-- On first start with the dedicated TLS mount, Resolix copies known CA and pin files from legacy `HISTORY_DIR/tls` when their destinations are absent. The recovery copies are left in place and may be removed after the new mount is backed up and verified.
-- Native installs should use [`contrib/resolix.service`](contrib/resolix.service). It still reads the legacy environment and state locations as fallbacks.
-- Replace `MODE=master` with `MODE=controller`, `MODE=slave` with `MODE=agent`, and `MASTER_URL` with `CONTROLLER_URL`. Legacy values remain accepted during migration.
+- On first start with the dedicated TLS mount, Resolix copies known CA and pin files from `HISTORY_DIR/tls` when their destinations are absent. The recovery copies are left in place and may be removed after the new mount is backed up and verified.
+- Native installs should use [`contrib/resolix.service`](contrib/resolix.service) with `/etc/default/resolix`.
 
 ### Versions and releases
 

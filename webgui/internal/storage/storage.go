@@ -20,9 +20,10 @@ const (
 	archiveRetryMaxDelay     = time.Minute
 	archiveDropLogInterval   = time.Minute
 	archiveInsertRows        = 64
+	agentDatabasePath        = ":memory:"
 )
 
-// Store manages the in-memory ring buffer of events and SQLite disk persistence.
+// Store manages the in-memory event ring and controller SQLite persistence.
 type Store struct {
 	cfg      *config.Config
 	db       *sql.DB
@@ -176,6 +177,26 @@ func (s *Store) pendingBatchLenLocked() int {
 	return len(s.batch) - s.batchStart
 }
 
+func (s *Store) hasPersistentQueryHistory() bool {
+	return s.cfg.Mode != config.ModeAgent
+}
+
+func (s *Store) databasePath() string {
+	if !s.hasPersistentQueryHistory() {
+		return agentDatabasePath
+	}
+	return s.cfg.FullDBPath()
+}
+
+func (s *Store) analyticsEventsSnapshot() []models.QueryEvent {
+	if !s.hasPersistentQueryHistory() {
+		return s.GetOrderedEvents(0)
+	}
+	s.batchMu.Lock()
+	defer s.batchMu.Unlock()
+	return append([]models.QueryEvent(nil), s.pendingBatchLocked()...)
+}
+
 func (s *Store) pendingBatchLocked() []models.QueryEvent {
 	return s.batch[s.batchStart:]
 }
@@ -195,9 +216,10 @@ func (s *Store) DB() *sql.DB {
 	return s.db
 }
 
-// Init ensures the SQLite database is ready, prepares cached statements, and warms up basic stats.
+// Init ensures SQLite is ready, using an in-memory database for agents, then
+// prepares cached statements and warms up basic stats.
 func (s *Store) Init() {
-	database, err := db.InitDB(s.cfg.FullDBPath())
+	database, err := db.InitDB(s.databasePath())
 	if err != nil {
 		log.Fatalf("Failed to initialize SQLite DB: %v", err)
 	}
@@ -211,11 +233,11 @@ func (s *Store) Init() {
 
 	// Create background maintenance context
 	s.ctx, s.cancel = context.WithCancel(context.Background())
-	s.optimizeDatabase(s.ctx)
-
-	// Start background maintenance goroutines
-	s.startVacuum(s.ctx)
-	s.startWALCheckpoint(s.ctx)
+	if s.hasPersistentQueryHistory() {
+		s.optimizeDatabase(s.ctx)
+		s.startVacuum(s.ctx)
+		s.startWALCheckpoint(s.ctx)
+	}
 
 	// Warmup basic type counts from DB for current day
 	cutoff := time.Now().Add(-24 * time.Hour).Unix()
@@ -299,8 +321,8 @@ func (s *Store) AssignEventID(e models.QueryEvent) models.QueryEvent {
 	return e
 }
 
-// AddEvent adds a new query event to the ring buffer, batches it for SQLite,
-// and returns the stored copy with its assigned ID.
+// AddEvent adds a query event to the in-memory ring, queues it for SQLite on
+// controllers, and returns the stored copy with its assigned ID.
 func (s *Store) AddEvent(e models.QueryEvent) models.QueryEvent {
 	s.statsMu.Lock()
 	// Rolling buckets update
@@ -377,6 +399,9 @@ func (s *Store) AddEvent(e models.QueryEvent) models.QueryEvent {
 		s.count++
 	}
 	s.eventsMu.Unlock()
+	if !s.hasPersistentQueryHistory() {
+		return e
+	}
 
 	// Add to SQLite batch. Crossing the high-water mark wakes the asynchronous
 	// archiver so normal traffic does not have to wait for the periodic timer.

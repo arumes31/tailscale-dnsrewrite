@@ -16,7 +16,7 @@ func TestDefaultFilterUpdateIntervalIsDaily(t *testing.T) {
 	}
 }
 
-func TestResolveModeCanonicalizesLegacyNames(t *testing.T) {
+func TestResolveModeAcceptsCanonicalNamesOnly(t *testing.T) {
 	tests := []struct {
 		name  string
 		value string
@@ -25,9 +25,9 @@ func TestResolveModeCanonicalizesLegacyNames(t *testing.T) {
 		{name: "default", want: ModeController},
 		{name: "controller", value: ModeController, want: ModeController},
 		{name: "agent", value: ModeAgent, want: ModeAgent},
-		{name: "legacy master", value: "master", want: ModeController},
-		{name: "legacy slave", value: "slave", want: ModeAgent},
-		{name: "invalid", value: "invalid", want: ModeController},
+		{name: "unsupported master", value: "master", want: "master"},
+		{name: "unsupported slave", value: "slave", want: "slave"},
+		{name: "invalid", value: "invalid", want: "invalid"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -39,7 +39,7 @@ func TestResolveModeCanonicalizesLegacyNames(t *testing.T) {
 	}
 }
 
-func TestResolveControllerURLPrefersCanonicalEnvironment(t *testing.T) {
+func TestResolveControllerURLIgnoresLegacyEnvironment(t *testing.T) {
 	t.Setenv("CONTROLLER_URL", "https://controller.example.test/")
 	t.Setenv("MASTER_URL", "https://legacy.example.test")
 	if got := resolveControllerURL(); got != "https://controller.example.test" {
@@ -47,8 +47,8 @@ func TestResolveControllerURLPrefersCanonicalEnvironment(t *testing.T) {
 	}
 
 	t.Setenv("CONTROLLER_URL", "")
-	if got := resolveControllerURL(); got != "https://legacy.example.test" {
-		t.Fatalf("legacy resolveControllerURL() = %q", got)
+	if got := resolveControllerURL(); got != "" {
+		t.Fatalf("resolveControllerURL() = %q, want empty", got)
 	}
 }
 
@@ -88,7 +88,6 @@ func TestParseUint32EnvEnforcesBitSize(t *testing.T) {
 func TestLoadConfigOperationalLimits(t *testing.T) {
 	t.Setenv("MODE", ModeController)
 	t.Setenv("CONTROLLER_URL", "")
-	t.Setenv("MASTER_URL", "")
 	t.Setenv("RATE_LIMIT_QPS", "")
 	t.Setenv("RATE_LIMIT_INTERNAL_QPS", "")
 	t.Setenv("RATE_LIMIT_EDE", "")
@@ -422,8 +421,15 @@ func TestVerifyConfigRejectsAuthenticationAndNetworkMisconfiguration(t *testing.
 	}
 
 	cfg := base()
-	cfg.WebUsername = "admin"
+	cfg.Mode = "slave"
 	errList, _ := cfg.VerifyConfig()
+	if !slices.Contains(errList, "MODE must be controller or agent") {
+		t.Fatalf("unsupported MODE errors = %v", errList)
+	}
+
+	cfg = base()
+	cfg.WebUsername = "admin"
+	errList, _ = cfg.VerifyConfig()
 	if len(errList) == 0 {
 		t.Fatal("partial web authentication passed verification")
 	}
@@ -492,14 +498,14 @@ func TestLoadConfigControllerTLSModes(t *testing.T) {
 
 	t.Setenv("CONTROLLER_TLS_PIN_FILE", "tls/controller-ca-pin.json")
 	cfg = LoadConfig()
-	if cfg.ControllerTLSPinFile != "controller-ca-pin.json" {
-		t.Fatalf("legacy controller pin file = %q", cfg.ControllerTLSPinFile)
+	if cfg.ControllerTLSPinFile != "tls/controller-ca-pin.json" {
+		t.Fatalf("controller pin file = %q", cfg.ControllerTLSPinFile)
 	}
 
 	t.Setenv("CONTROLLER_TLS_PIN_FILE", "tls/agents/custom-pin.json")
 	cfg = LoadConfig()
-	if want := filepath.Join("agents", "custom-pin.json"); cfg.ControllerTLSPinFile != want {
-		t.Fatalf("custom legacy controller pin file = %q, want %q", cfg.ControllerTLSPinFile, want)
+	if want := "tls/agents/custom-pin.json"; cfg.ControllerTLSPinFile != want {
+		t.Fatalf("custom controller pin file = %q, want %q", cfg.ControllerTLSPinFile, want)
 	}
 }
 

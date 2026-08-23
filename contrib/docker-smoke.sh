@@ -61,6 +61,13 @@ docker build \
   --build-arg BUILD_INFO="${GITHUB_SHA:-local}" \
   -t resolix:smoke .
 
+docker run --rm --entrypoint sh resolix:smoke -c '
+  test "$HISTORY_DIR" = /var/lib/resolix
+  test "$CONFIG_DIR" = /var/lib/resolix-config
+  test "$TLS_STATE_DIR" = /var/lib/resolix-tls
+  test ! -e /var/lib/tailscale-dnsrewrite
+'
+
 # Provide a local Unix socket and deterministic CLI responses so the image's
 # default entrypoint exercises coordinated tailscaled/Resolix startup without
 # requiring access to a real tailnet or auth key.

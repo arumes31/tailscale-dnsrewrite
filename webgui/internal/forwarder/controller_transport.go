@@ -78,6 +78,9 @@ func getResourceStats() (memoryMB float64, goroutines int) {
 
 // getDBSizeMB returns the size of the database file in megabytes.
 func getDBSizeMB(cfg *config.Config) float64 {
+	if cfg.Mode == config.ModeAgent {
+		return 0
+	}
 	dbPath := cfg.FullDBPath()
 	if info, err := os.Stat(dbPath); err == nil {
 		return float64(info.Size()) / 1024 / 1024

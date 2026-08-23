@@ -283,8 +283,11 @@ func runApplication(cfg *config.Config, sigChan <-chan os.Signal) {
 	// Start Trend Analysis
 	store.StartStatsTrends(ctx)
 
-	// History Archiver (periodic plus automatic high-water draining)
-	go store.RunArchiver(ctx, cfg.BatchArchiveInterval)
+	// Only the controller owns durable query history. Agents retain recent
+	// events in memory and persist only the bounded forwarder backlog.
+	if cfg.Mode != config.ModeAgent {
+		go store.RunArchiver(ctx, cfg.BatchArchiveInterval)
+	}
 
 	// Cleanup (uses configurable CleanupPendingInterval)
 	go func() {
@@ -481,12 +484,16 @@ func runApplication(cfg *config.Config, sigChan <-chan os.Signal) {
 
 	// Flush immediately so pending events become durable before the other
 	// shutdown waits consume the container's stop grace period.
-	logger.Info("Shutdown step 2: Flushing pending query events to SQLite...")
-	archived, err := flushArchiveForShutdown(cfg, store)
-	if err != nil {
-		logger.Error("Shutdown step 2: SQLite archive flush failed after archiving %d events: %v", archived, err)
+	if cfg.Mode != config.ModeAgent {
+		logger.Info("Shutdown step 2: Flushing pending query events to SQLite...")
+		archived, archiveErr := flushArchiveForShutdown(cfg, store)
+		if archiveErr != nil {
+			logger.Error("Shutdown step 2: SQLite archive flush failed after archiving %d events: %v", archived, archiveErr)
+		} else {
+			logger.Info("Shutdown step 2: Archived %d events to SQLite", archived)
+		}
 	} else {
-		logger.Info("Shutdown step 2: Archived %d events to SQLite", archived)
+		logger.Info("Shutdown step 2: Agent has no local query archive to flush")
 	}
 
 	// Step 3: Stop the log forwarder
@@ -514,12 +521,16 @@ func runApplication(cfg *config.Config, sigChan <-chan os.Signal) {
 	waitForDNSServer(cfg, dnsDone)
 
 	// Step 8: Perform a final bounded flush after all query producers stop.
-	logger.Info("Shutdown step 8: Flushing final pending query events to SQLite...")
-	archived, err = flushArchiveForShutdown(cfg, store)
-	if err != nil {
-		logger.Error("Shutdown step 8: Final SQLite archive flush failed after archiving %d events: %v", archived, err)
+	if cfg.Mode != config.ModeAgent {
+		logger.Info("Shutdown step 8: Flushing final pending query events to SQLite...")
+		archived, archiveErr := flushArchiveForShutdown(cfg, store)
+		if archiveErr != nil {
+			logger.Error("Shutdown step 8: Final SQLite archive flush failed after archiving %d events: %v", archived, archiveErr)
+		} else {
+			logger.Info("Shutdown step 8: Archived %d events to SQLite", archived)
+		}
 	} else {
-		logger.Info("Shutdown step 8: Archived %d events to SQLite", archived)
+		logger.Info("Shutdown step 8: Agent has no local query archive to flush")
 	}
 
 	// Step 9: Close the database and release resources
@@ -535,6 +546,9 @@ func runApplication(cfg *config.Config, sigChan <-chan os.Signal) {
 }
 
 func flushArchiveForShutdown(cfg *config.Config, store *storage.Store) (int, error) {
+	if cfg != nil && cfg.Mode == config.ModeAgent {
+		return 0, nil
+	}
 	timeout := config.DefaultHTTPShutdownTimeout
 	if cfg != nil && cfg.HTTPShutdownTimeout > 0 {
 		timeout = cfg.HTTPShutdownTimeout

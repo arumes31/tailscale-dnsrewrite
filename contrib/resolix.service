@@ -24,22 +24,19 @@ Documentation=https://github.com/arumes31/resolix
 
 [Service]
 Type=simple
-# Read the former environment location first to preserve in-place upgrades;
-# values in the Resolix environment file take precedence when both exist.
-EnvironmentFile=-/etc/default/tailscale-dnsrewrite
 EnvironmentFile=-/etc/default/resolix
 ExecStart=/usr/local/libexec/resolix/entrypoint.sh
 Restart=on-failure
 RestartSec=5
 LimitNOFILE=65536
 RuntimeDirectory=tailscale
-StateDirectory=tailscale resolix resolix-config tailscale-dnsrewrite
+StateDirectory=tailscale resolix resolix-config resolix-tls
 
 # Security hardening
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/var/lib/tailscale /var/lib/resolix /var/lib/resolix-config /var/lib/tailscale-dnsrewrite /var/run/tailscale
+ReadWritePaths=/var/lib/tailscale /var/lib/resolix /var/lib/resolix-config /var/lib/resolix-tls /var/run/tailscale
 PrivateTmp=true
 
 # Logging

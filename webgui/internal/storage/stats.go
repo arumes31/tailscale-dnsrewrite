@@ -10,22 +10,22 @@ import (
 	"github.com/arumes31/resolix/webgui/internal/models"
 )
 
-// GetStats returns aggregated traffic statistics using SQLite.
+// GetStats returns aggregated traffic statistics from durable controller
+// history or the agent's in-memory event ring.
 func (s *Store) GetStats() map[string]interface{} {
 	return s.getStatsAt(time.Now())
 }
 
 // getStatsAt is the deterministic implementation behind GetStats. Complete
-// UTC hours use incremental aggregates; the partial cutoff hour is read from
-// SQLite exactly so the rolling 24-hour window never includes older rows.
+// Controller UTC hours use incremental aggregates; the partial cutoff hour is
+// read from SQLite exactly so the rolling 24-hour window never includes older
+// rows. Agents merge their bounded in-memory ring instead.
 //
 //nolint:gocyclo
 func (s *Store) getStatsAt(nowTime time.Time) map[string]interface{} {
 	s.archiveMu.Lock()
 	defer s.archiveMu.Unlock()
-	s.batchMu.Lock()
-	pending := append([]models.QueryEvent(nil), s.pendingBatchLocked()...)
-	s.batchMu.Unlock()
+	volatileEvents := s.analyticsEventsSnapshot()
 	s.dbMu.RLock()
 	defer s.dbMu.RUnlock()
 
@@ -157,8 +157,8 @@ func (s *Store) getStatsAt(nowTime time.Time) map[string]interface{} {
 		}
 	}
 
-	totalEvents += int64(len(pending))
-	for _, event := range pending {
+	totalEvents += int64(len(volatileEvents))
+	for _, event := range volatileEvents {
 		if event.UnixTime < cutoff24h {
 			continue
 		}

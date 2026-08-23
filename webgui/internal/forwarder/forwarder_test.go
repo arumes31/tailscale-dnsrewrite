@@ -55,6 +55,17 @@ func TestSanitizeDiagnosticRedactsStateAndControls(t *testing.T) {
 	}
 }
 
+func TestGetDBSizeMBAgentReportsZeroForLegacyDatabase(t *testing.T) {
+	dir := t.TempDir()
+	cfg := &config.Config{Mode: config.ModeAgent, HistoryDir: dir, DBPath: "legacy.db"}
+	if err := os.WriteFile(cfg.FullDBPath(), make([]byte, 1024), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := getDBSizeMB(cfg); got != 0 {
+		t.Fatalf("agent database size = %f MiB, want 0", got)
+	}
+}
+
 func TestDecodePersistedBacklogSupportsVersionedAndLegacyState(t *testing.T) {
 	item := persistedBacklogItem{Event: models.QueryEvent{Domain: "example.test"}, QueuedAt: time.Now()}
 	for name, value := range map[string]any{

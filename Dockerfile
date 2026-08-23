@@ -45,10 +45,9 @@ COPY --from=tailscale/tailscale:v1.102.2 /usr/local/bin/tailscaled /usr/sbin/tai
 # Copy binary from builder
 COPY --from=builder /app/resolix /usr/bin/resolix
 
-# Create the current history, managed-config, TLS, and legacy data directories.
-# The entrypoint and application migrate populated legacy mounts during upgrades.
-RUN mkdir -p /var/lib/resolix /var/lib/resolix-config /var/lib/resolix-tls /var/lib/tailscale-dnsrewrite \
-    && chmod 750 /var/lib/resolix /var/lib/tailscale-dnsrewrite \
+# Create the persistent Resolix state directories.
+RUN mkdir -p /var/lib/resolix /var/lib/resolix-config /var/lib/resolix-tls \
+    && chmod 750 /var/lib/resolix \
     && chmod 750 /var/lib/resolix-config \
     && chmod 700 /var/lib/resolix-tls \
     && mkdir -p /var/lib/tailscale && chmod 750 /var/lib/tailscale
@@ -63,6 +62,7 @@ RUN mkdir -p /var/run/tailscale && chmod 750 /var/run/tailscale
 ENV MODE=controller
 ENV PORT=35353
 ENV WEB_LISTEN_ADDR=0.0.0.0
+ENV HISTORY_DIR=/var/lib/resolix
 ENV CONFIG_DIR=/var/lib/resolix-config
 ENV TLS_STATE_DIR=/var/lib/resolix-tls
 

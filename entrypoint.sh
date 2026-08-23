@@ -28,20 +28,7 @@ TS_AUTHKEY=$(echo "$TS_AUTHKEY" | tr -d '\r' | xargs)
 NODE_NAME=$(echo "${NODE_NAME:-resolix}" | tr -d '\r' | xargs)
 export NODE_NAME
 
-# Preserve upgrades from images that stored state at the former project path.
-# A configured HISTORY_DIR or a populated Resolix directory always wins.
-directory_has_entries() {
-    [ -d "$1" ] && [ -n "$(find "$1" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]
-}
-
-HISTORY_DIR_CONFIGURED=${HISTORY_DIR+x}
 HISTORY_DIR=${HISTORY_DIR:-/var/lib/resolix}
-if [ -z "$HISTORY_DIR_CONFIGURED" ] \
-    && ! directory_has_entries "$HISTORY_DIR" \
-    && directory_has_entries "/var/lib/tailscale-dnsrewrite"; then
-    HISTORY_DIR=/var/lib/tailscale-dnsrewrite
-    echo "Using data from the legacy history directory: $HISTORY_DIR"
-fi
 export HISTORY_DIR
 
 if [ -z "$TS_AUTHKEY" ] && [ -n "$TS_AUTHKEY_FILE" ]; then

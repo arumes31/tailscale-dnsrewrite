@@ -4,6 +4,7 @@
 package storage
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"sync"
@@ -72,6 +73,28 @@ func TestInitAndSchema(t *testing.T) {
 	}
 }
 
+func TestInitAgentUsesInMemoryDatabase(t *testing.T) {
+	cfg := &config.Config{
+		Mode:                     config.ModeAgent,
+		MaxEvents:                100,
+		HistoryDir:               t.TempDir(),
+		DBPath:                   "agent.db",
+		HistoryRetention:         72 * time.Hour,
+		UpstreamLatencyThreshold: 200,
+	}
+	s := NewStore(cfg)
+	s.Init()
+	defer s.Close()
+
+	if _, err := os.Stat(cfg.FullDBPath()); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("agent database file exists or stat failed unexpectedly: %v", err)
+	}
+	var name string
+	if err := s.db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='queries'").Scan(&name); err != nil {
+		t.Fatalf("in-memory queries table not found: %v", err)
+	}
+}
+
 func TestAddEvent_EmptyBuffer(t *testing.T) {
 	s, cleanup := newTestStore(t)
 	defer cleanup()
@@ -110,6 +133,45 @@ func TestAddEvent_SingleEvent(t *testing.T) {
 	}
 	if stored.ID != events[0].ID {
 		t.Errorf("returned ID = %q, stored ID = %q", stored.ID, events[0].ID)
+	}
+}
+
+func TestAddEventAgentKeepsEventInMemoryWithoutArchiving(t *testing.T) {
+	cfg := &config.Config{
+		Mode:                     config.ModeAgent,
+		MaxEvents:                100,
+		HistoryDir:               t.TempDir(),
+		DBPath:                   "agent.db",
+		HistoryRetention:         72 * time.Hour,
+		UpstreamLatencyThreshold: 200,
+	}
+	s := NewStore(cfg)
+	s.Init()
+	defer s.Close()
+
+	s.AddEvent(models.QueryEvent{
+		UnixTime: time.Now().Unix(),
+		Type:     "A",
+		Domain:   "agent-only.example",
+		ClientIP: "192.0.2.1",
+		Node:     "agent-1",
+	})
+
+	if events := s.GetOrderedEvents(10); len(events) != 1 {
+		t.Fatalf("in-memory events = %d, want 1", len(events))
+	}
+	if metrics := s.ArchiveMetrics(); metrics.Pending != 0 || metrics.PendingBytes != 0 {
+		t.Fatalf("agent archive queue = %+v, want empty", metrics)
+	}
+	if archived := s.ArchiveStep(time.Now()); archived != 0 {
+		t.Fatalf("agent archived events = %d, want 0", archived)
+	}
+	var rows int
+	if err := s.db.QueryRow("SELECT COUNT(*) FROM queries").Scan(&rows); err != nil {
+		t.Fatal(err)
+	}
+	if rows != 0 {
+		t.Fatalf("agent SQLite rows = %d, want 0", rows)
 	}
 }
 
