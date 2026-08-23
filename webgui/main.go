@@ -465,18 +465,7 @@ func runApplication(cfg *config.Config, sigChan <-chan os.Signal) {
 		serverDone <- srv.Start(ctx, staticHandler, cspMiddleware, nonceFromContext)
 	}()
 
-	serverStopped := false
-	select {
-	case sig := <-sigChan:
-		logger.Info("Received signal %v, initiating graceful shutdown", sig)
-	case err := <-errChan:
-		logger.Error("Server error: %v", err)
-	case err := <-serverDone:
-		serverStopped = true
-		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			logger.Error("HTTP server error: %v", err)
-		}
-	}
+	serverStopped := waitForShutdownRequest(sigChan, errChan, serverDone)
 
 	// Step 1: Cancel context to stop all background goroutines
 	logger.Info("Shutdown step 1: Stopping background goroutines...")
@@ -543,6 +532,26 @@ func runApplication(cfg *config.Config, sigChan <-chan os.Signal) {
 	logger.CloseFile()
 
 	logger.Info("Graceful shutdown complete")
+}
+
+func waitForShutdownRequest(
+	sigChan <-chan os.Signal,
+	errChan <-chan error,
+	serverDone <-chan error,
+) bool {
+	select {
+	case sig := <-sigChan:
+		logger.Info("Received signal %v, initiating graceful shutdown", sig)
+		return false
+	case err := <-errChan:
+		logger.Error("Server error: %v", err)
+		return false
+	case err := <-serverDone:
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			logger.Error("HTTP server error: %v", err)
+		}
+		return true
+	}
 }
 
 func flushArchiveForShutdown(cfg *config.Config, store *storage.Store) (int, error) {
