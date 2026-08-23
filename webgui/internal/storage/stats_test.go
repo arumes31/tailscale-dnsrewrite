@@ -43,6 +43,49 @@ func TestGetStats(t *testing.T) {
 	}
 }
 
+func TestGetStatsAgentUsesInMemoryEvents(t *testing.T) {
+	cfg := &config.Config{
+		Mode:                     config.ModeAgent,
+		MaxEvents:                100,
+		HistoryDir:               t.TempDir(),
+		DBPath:                   "agent.db",
+		HistoryRetention:         72 * time.Hour,
+		UpstreamLatencyThreshold: 200,
+	}
+	store := NewStore(cfg)
+	store.Init()
+	defer store.Close()
+
+	now := time.Now()
+	for _, event := range []models.QueryEvent{
+		{
+			UnixTime: now.Unix(), Domain: "agent.example", ClientIP: "192.0.2.1",
+			Type: "A", Upstream: "1.1.1.1", Node: "agent-1",
+		},
+		{
+			UnixTime: now.Unix(), Domain: "agent.example", ClientIP: "192.0.2.2",
+			Type: "AAAA", Upstream: "System Cache", CacheStatus: "fresh", Node: "agent-1",
+		},
+	} {
+		store.AddEvent(event)
+	}
+
+	stats := store.getStatsAt(now)
+	if total := stats["total"].(int64); total != 2 {
+		t.Fatalf("agent total = %d, want 2", total)
+	}
+	if rpd := stats["rpd"].(int); rpd != 2 {
+		t.Fatalf("agent rolling-day queries = %d, want 2", rpd)
+	}
+	topDomains := stats["top_domains"].([]models.StatEntry)
+	if len(topDomains) != 1 || topDomains[0].Key != "agent.example" || topDomains[0].Count != 2 {
+		t.Fatalf("agent top domains = %+v", topDomains)
+	}
+	if ratio := stats["cache_hit_ratio"].(float64); ratio != 50 {
+		t.Fatalf("agent cache hit ratio = %v, want 50", ratio)
+	}
+}
+
 func TestGetStatsIncludesPendingTopLists(t *testing.T) {
 	s, cleanup := newTestStore(t)
 	defer cleanup()

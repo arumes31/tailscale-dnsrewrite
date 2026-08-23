@@ -77,10 +77,11 @@ func (s *Store) DBMetrics(ctx context.Context) DatabaseMetrics {
 		BusyErrors:           s.dbBusyErrors.Load(),
 		CheckpointAgeSeconds: -1,
 	}
-	if info, err := os.Stat(s.cfg.FullDBPath()); err == nil {
+	databasePath := s.databasePath()
+	if info, err := os.Stat(databasePath); err == nil {
 		metrics.DatabaseBytes = info.Size()
 	}
-	if info, err := os.Stat(s.cfg.FullDBPath() + "-wal"); err == nil {
+	if info, err := os.Stat(databasePath + "-wal"); err == nil {
 		metrics.WALBytes = info.Size()
 	}
 

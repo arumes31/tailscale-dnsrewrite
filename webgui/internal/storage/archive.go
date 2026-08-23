@@ -15,6 +15,9 @@ import (
 // RunArchiver persists queued events when the queue reaches its high-water mark
 // or the periodic interval expires. Failed writes retry with bounded backoff.
 func (s *Store) RunArchiver(ctx context.Context, interval time.Duration) {
+	if !s.hasPersistentQueryHistory() {
+		return
+	}
 	if interval <= 0 {
 		interval = config.DefaultArchiveInterval
 	}
@@ -78,6 +81,9 @@ func (s *Store) ArchiveStep(now time.Time) int {
 }
 
 func (s *Store) archiveStep(ctx context.Context, now time.Time) (int, error) {
+	if !s.hasPersistentQueryHistory() {
+		return 0, nil
+	}
 	s.archiveMu.Lock()
 	defer s.archiveMu.Unlock()
 	s.dbMu.RLock()

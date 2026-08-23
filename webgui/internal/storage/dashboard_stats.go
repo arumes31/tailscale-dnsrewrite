@@ -82,8 +82,9 @@ func (s *Store) GetDashboardStats(
 
 // GetDashboardStatsWithComparison returns the current dashboard snapshot and,
 // when previousStart is provided, a headline summary for the immediately
-// preceding non-overlapping window. Both windows share one pending-event
-// snapshot and one database scan.
+// preceding non-overlapping window. Both windows share one volatile-event
+// snapshot and one database scan. The volatile snapshot is the pending archive
+// queue on controllers and the in-memory event ring on agents.
 func (s *Store) GetDashboardStatsWithComparison(
 	ctx context.Context,
 	start time.Time,
@@ -106,9 +107,7 @@ func (s *Store) GetDashboardStatsWithComparison(
 	s.archiveMu.Lock()
 	defer s.archiveMu.Unlock()
 
-	s.batchMu.Lock()
-	pending := append([]models.QueryEvent{}, s.pendingBatchLocked()...)
-	s.batchMu.Unlock()
+	volatileEvents := s.analyticsEventsSnapshot()
 
 	s.dbMu.RLock()
 	if s.db != nil {
@@ -120,7 +119,7 @@ func (s *Store) GetDashboardStatsWithComparison(
 	}
 	s.dbMu.RUnlock()
 
-	for _, event := range pending {
+	for _, event := range volatileEvents {
 		accumulator.mergeEvent(event)
 	}
 

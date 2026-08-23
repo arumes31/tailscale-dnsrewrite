@@ -19,16 +19,25 @@ import (
 func (c *Config) VerifyConfig() ([]string, []string) {
 	var errs []string
 	var warnings []string
+	if c.Mode != "" && c.Mode != ModeController && c.Mode != ModeAgent {
+		errs = append(errs, "MODE must be controller or agent")
+	}
 
-	// 1. Database path is writable
-	dbDir := filepath.Dir(c.FullDBPath())
-	if err := os.MkdirAll(dbDir, 0750); err != nil {
-		errs = append(errs, fmt.Sprintf("Cannot create database directory %s: %v", dbDir, err))
+	// 1. Persistent state is writable. Controllers need their database path;
+	// agents need only HistoryDir for node identity and the forwarder backlog.
+	stateDir := filepath.Dir(c.FullDBPath())
+	stateName := "Database"
+	if c.Mode == ModeAgent {
+		stateDir = c.HistoryDir
+		stateName = "Agent state"
+	}
+	if err := os.MkdirAll(stateDir, 0750); err != nil {
+		errs = append(errs, fmt.Sprintf("Cannot create %s directory %s: %v", strings.ToLower(stateName), stateDir, err))
 	} else {
 		// CreateTemp picks a random name inside the trusted config directory,
 		// avoiding a predictable-path write (gosec G304).
-		if f, err := os.CreateTemp(dbDir, ".write_test*"); err != nil {
-			errs = append(errs, fmt.Sprintf("Database directory %s is not writable: %v", dbDir, err))
+		if f, err := os.CreateTemp(stateDir, ".write_test*"); err != nil {
+			errs = append(errs, fmt.Sprintf("%s directory %s is not writable: %v", stateName, stateDir, err))
 		} else {
 			testFile := f.Name()
 			_ = f.Close()

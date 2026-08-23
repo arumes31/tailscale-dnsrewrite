@@ -70,7 +70,6 @@ MODE=controller
 # TLS_STATE_DIR=/var/lib/resolix-tls
 # CONTROLLER_TLS_TRUST=system
 # CONTROLLER_TLS_PIN_FILE=controller-ca-pin.json
-# Legacy upgrades may still use MASTER_URL; CONTROLLER_URL takes precedence.
 
 # Unique identifier for this node
 NODE_NAME=resolix-1
@@ -94,7 +93,9 @@ BASE_URL=/
 # Comma-separated proxy IPs/CIDRs allowed to supply Forwarded/X-Forwarded-*.
 # TRUSTED_PROXIES=127.0.0.1,10.0.0.0/8
 
-# Database file name or absolute path (default: dns.db)
+# Controller-only database file name or absolute path (default: dns.db).
+# Agents keep live events in memory and persist only the bounded unsent backlog;
+# DB_PATH is ignored in agent mode.
 # Query history and managed DNS configuration use separate persistent mounts.
 # HISTORY_DIR=/var/lib/resolix
 # CONFIG_DIR=/var/lib/resolix-config
@@ -200,7 +201,7 @@ DB_PATH=dns.db
 
 # Configurable timeout values (Item 80)
 # SSE_KEEPALIVE_INTERVAL=30s
-# Maximum periodic interval; busy queues also archive at the trigger size.
+# Controller-only maximum periodic interval; busy queues also archive at the trigger size.
 # BATCH_ARCHIVE_INTERVAL=1m
 # ARCHIVE_QUEUE_CAPACITY=1000000
 # ARCHIVE_TRIGGER_SIZE=5000

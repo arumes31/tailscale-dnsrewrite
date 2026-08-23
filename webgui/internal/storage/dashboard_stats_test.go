@@ -139,6 +139,46 @@ func TestGetDashboardStatsMergesArchivedAndPendingEvents(t *testing.T) {
 	}
 }
 
+func TestGetDashboardStatsAgentUsesInMemoryEvents(t *testing.T) {
+	cfg := &config.Config{
+		Mode:                     config.ModeAgent,
+		MaxEvents:                100,
+		HistoryDir:               t.TempDir(),
+		DBPath:                   "agent.db",
+		HistoryRetention:         72 * time.Hour,
+		UpstreamLatencyThreshold: 200,
+	}
+	store := NewStore(cfg)
+	store.Init()
+	defer store.Close()
+
+	now := time.Now().UTC().Truncate(time.Minute)
+	store.AddEvent(models.QueryEvent{
+		UnixTime: now.Add(-2 * time.Minute).Unix(), Domain: "agent.example",
+		ClientIP: "192.0.2.1", Type: "A", Upstream: "1.1.1.1",
+		Node: "agent-1", ResponseCode: "NOERROR",
+	})
+	store.AddEvent(models.QueryEvent{
+		UnixTime: now.Add(-time.Minute).Unix(), Domain: "blocked-agent.example",
+		ClientIP: "192.0.2.2", Type: "AAAA", Upstream: "Filtered",
+		Node: "agent-1", ResponseCode: "NXDOMAIN", Blocked: true,
+	})
+
+	stats, err := store.GetDashboardStats(t.Context(), now.Add(-time.Hour), now, 10*time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.Summary.Queries != 2 || stats.Summary.Blocked != 1 {
+		t.Fatalf("agent dashboard summary = %+v", stats.Summary)
+	}
+	if stats.NodeTotals["agent-1"] != 2 {
+		t.Fatalf("agent node totals = %+v", stats.NodeTotals)
+	}
+	if len(stats.TopDomains) != 2 {
+		t.Fatalf("agent top domains = %+v", stats.TopDomains)
+	}
+}
+
 func TestGetDashboardStatsClassifiesRewritesAsLocalResponses(t *testing.T) {
 	store, cleanup := newTestStore(t)
 	defer cleanup()

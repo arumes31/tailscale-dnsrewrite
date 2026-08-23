@@ -6,7 +6,6 @@ import (
 	"net/url"
 	"os"
 	pathpkg "path"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -103,7 +102,7 @@ func parseUint32Env(key string, defaultVal uint32) uint32 {
 	return uint32(n)
 }
 
-// resolveMode reads MODE and normalizes legacy role names.
+// resolveMode reads MODE and accepts the current controller and agent roles.
 func resolveMode() string {
 	mode := strings.ToLower(strings.TrimSpace(os.Getenv("MODE")))
 	switch mode {
@@ -111,15 +110,9 @@ func resolveMode() string {
 		return ModeController
 	case ModeAgent:
 		return ModeAgent
-	case "master":
-		log.Printf("[WARN] MODE=master is deprecated; use MODE=%s", ModeController)
-		return ModeController
-	case "slave":
-		log.Printf("[WARN] MODE=slave is deprecated; use MODE=%s", ModeAgent)
-		return ModeAgent
 	default:
-		log.Printf("[WARN] Invalid MODE '%s', falling back to %s", sanitizeForLog(mode), ModeController) // #nosec G706 -- CR/LF stripped by sanitizeForLog; gosec taint analysis cannot see through the helper
-		return ModeController
+		log.Printf("[WARN] Invalid MODE '%s'; expected %s or %s", sanitizeForLog(mode), ModeController, ModeAgent) // #nosec G706 -- CR/LF stripped by sanitizeForLog; gosec taint analysis cannot see through the helper
+		return mode
 	}
 }
 
@@ -165,12 +158,6 @@ func validateControllerURL(controllerURL string) {
 
 func resolveControllerURL() string {
 	controllerURL := os.Getenv("CONTROLLER_URL")
-	if controllerURL == "" {
-		controllerURL = os.Getenv("MASTER_URL")
-		if controllerURL != "" {
-			log.Printf("[WARN] MASTER_URL is deprecated; use CONTROLLER_URL")
-		}
-	}
 	return strings.TrimSuffix(controllerURL, "/")
 }
 
@@ -321,16 +308,4 @@ func resolveBlocking() (mode, ip4, ip6 string) {
 		ip6 = DefaultBlockCustomIP6
 	}
 	return mode, ip4, ip6
-}
-
-func legacyTLSPinFile(path string) (string, bool) {
-	cleanPath := filepath.Clean(path)
-	if filepath.IsAbs(cleanPath) {
-		return path, false
-	}
-	relativePath, err := filepath.Rel("tls", cleanPath)
-	if err != nil || relativePath == "." || !filepath.IsLocal(relativePath) {
-		return path, false
-	}
-	return relativePath, true
 }
