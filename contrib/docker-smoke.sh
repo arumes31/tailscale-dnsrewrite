@@ -2,6 +2,9 @@
 set -euo pipefail
 
 smoke_dir="$(mktemp -d)"
+# mktemp creates a root/runner-only directory. The smoke container runs the
+# application as UID 10001 and must be able to traverse this disposable mount.
+chmod 0755 "${smoke_dir}"
 container_name="resolix-smoke-${RANDOM}"
 socket_container="${container_name}-socket"
 socket_volume="${container_name}-socket"
@@ -122,9 +125,18 @@ for _ in $(seq 1 60); do
   if curl --fail --silent "http://127.0.0.1:${web_port}/readyz" >/dev/null; then
     break
   fi
+  if [[ "$(docker inspect --format '{{.State.Running}}' "${container_name}")" != 'true' ]]; then
+    echo 'Resolix smoke container exited before becoming ready:' >&2
+    docker logs "${container_name}" >&2
+    exit 1
+  fi
   sleep 1
 done
-curl --fail --silent "http://127.0.0.1:${web_port}/readyz" >/dev/null
+if ! curl --fail --silent "http://127.0.0.1:${web_port}/readyz" >/dev/null; then
+  echo 'Resolix smoke container did not become ready:' >&2
+  docker logs "${container_name}" >&2
+  exit 1
+fi
 
 # Keep the Tailscale daemon's required kernel-network privilege separate from
 # the DNS/web process. A regression to running Resolix itself as root should
