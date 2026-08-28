@@ -31,6 +31,9 @@ fi
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj "${openssl_subject}" \
   -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1' \
   -keyout "${smoke_dir}/tls.key" -out "${smoke_dir}/tls.crt" >/dev/null 2>&1
+# The application runs as UID 10001. These disposable bind-mounted fixtures
+# are created by the CI runner, so grant the container read access explicitly.
+chmod 0644 "${smoke_dir}/tls.key" "${smoke_dir}/tls.crt"
 
 compose_tls_dir='/var/lib/resolix-custom-tls'
 compose_config_dir='/var/lib/resolix-custom-config'
@@ -73,6 +76,9 @@ docker run --rm --entrypoint sh resolix:smoke -c '
 # requiring access to a real tailnet or auth key.
 docker volume create "${socket_volume}" >/dev/null
 mkdir -p "${smoke_dir}/config"
+# The host runner owns this ephemeral bind mount; allow the non-root process to
+# exercise configuration persistence without weakening production directories.
+chmod 0777 "${smoke_dir}/config"
 MSYS_NO_PATHCONV=1 docker run -d --name "${socket_container}" \
   -v "${socket_volume}:/var/run/tailscale" \
   alpine:3.24 sh -c \
