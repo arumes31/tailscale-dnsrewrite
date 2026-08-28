@@ -2,6 +2,9 @@
 set -euo pipefail
 
 smoke_dir="$(mktemp -d)"
+# mktemp creates a root/runner-only directory. The smoke container runs the
+# application as UID 10001 and must be able to traverse this disposable mount.
+chmod 0755 "${smoke_dir}"
 container_name="resolix-smoke-${RANDOM}"
 socket_container="${container_name}-socket"
 socket_volume="${container_name}-socket"
@@ -31,6 +34,9 @@ fi
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj "${openssl_subject}" \
   -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1' \
   -keyout "${smoke_dir}/tls.key" -out "${smoke_dir}/tls.crt" >/dev/null 2>&1
+# The application runs as UID 10001. These disposable bind-mounted fixtures
+# are created by the CI runner, so grant the container read access explicitly.
+chmod 0644 "${smoke_dir}/tls.key" "${smoke_dir}/tls.crt"
 
 compose_tls_dir='/var/lib/resolix-custom-tls'
 compose_config_dir='/var/lib/resolix-custom-config'
@@ -73,6 +79,9 @@ docker run --rm --entrypoint sh resolix:smoke -c '
 # requiring access to a real tailnet or auth key.
 docker volume create "${socket_volume}" >/dev/null
 mkdir -p "${smoke_dir}/config"
+# The host runner owns this ephemeral bind mount; allow the non-root process to
+# exercise configuration persistence without weakening production directories.
+chmod 0777 "${smoke_dir}/config"
 MSYS_NO_PATHCONV=1 docker run -d --name "${socket_container}" \
   -v "${socket_volume}:/var/run/tailscale" \
   alpine:3.24 sh -c \
@@ -116,9 +125,28 @@ for _ in $(seq 1 60); do
   if curl --fail --silent "http://127.0.0.1:${web_port}/readyz" >/dev/null; then
     break
   fi
+  if [[ "$(docker inspect --format '{{.State.Running}}' "${container_name}")" != 'true' ]]; then
+    echo 'Resolix smoke container exited before becoming ready:' >&2
+    docker logs "${container_name}" >&2
+    exit 1
+  fi
   sleep 1
 done
-curl --fail --silent "http://127.0.0.1:${web_port}/readyz" >/dev/null
+if ! curl --fail --silent "http://127.0.0.1:${web_port}/readyz" >/dev/null; then
+  echo 'Resolix smoke container did not become ready:' >&2
+  docker logs "${container_name}" >&2
+  exit 1
+fi
+
+# Keep the Tailscale daemon's required kernel-network privilege separate from
+# the DNS/web process. A regression to running Resolix itself as root should
+# fail the image smoke test.
+resolix_pid="$(docker exec "${container_name}" pidof resolix)"
+resolix_uid="$(docker exec "${container_name}" stat -c '%u' "/proc/${resolix_pid}")"
+if [[ "${resolix_uid}" != "10001" ]]; then
+  echo "Resolix runs as UID ${resolix_uid}, want dedicated UID 10001" >&2
+  exit 1
+fi
 
 api_version="$(curl --fail --silent "http://127.0.0.1:${web_port}/api/version" \
   | python3 -c 'import json, sys; print(json.load(sys.stdin)["version"])')"

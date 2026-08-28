@@ -2,6 +2,10 @@ services:
   resolix:
     image: ghcr.io/arumes31/resolix:${IMAGE_VERSION:-latest}
     container_name: resolix
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=32m
+      - /var/run/tailscale:rw,nosuid,nodev,size=8m,mode=0750
     environment:
       - TS_AUTHKEY=${TS_AUTHKEY}
       - TS_AUTHKEY_FILE=${TS_AUTHKEY_FILE:-}

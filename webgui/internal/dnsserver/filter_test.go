@@ -29,6 +29,10 @@ type filterHarness struct {
 // filter blocks blocked.test (with exception allowed.blocked.test) using the
 // given blocking mode.
 func startFilteredServer(t *testing.T, mode string) *filterHarness {
+	return startFilteredServerWithRewrites(t, mode, nil)
+}
+
+func startFilteredServerWithRewrites(t *testing.T, mode string, rewriteStore *rewrites.Store) *filterHarness {
 	t.Helper()
 
 	var hits atomic.Int32
@@ -50,6 +54,7 @@ func startFilteredServer(t *testing.T, mode string) *filterHarness {
 		BlockingMode:   mode,
 		BlockCustomIP4: "192.0.2.66",
 		BlockCustomIP6: "2001:db8::66",
+		Rewrites:       rewriteStore,
 	}, func(ev models.QueryEvent, _ bool) { events <- ev })
 
 	serverAddr := startTestServer(t, srv)
@@ -162,7 +167,6 @@ func TestBlockingModes(t *testing.T) {
 }
 
 func TestCNAMEChasePropagatesBlockedState(t *testing.T) {
-	h := startFilteredServer(t, "nxdomain")
 	store, err := rewrites.Load("", "")
 	if err != nil {
 		t.Fatal(err)
@@ -170,7 +174,7 @@ func TestCNAMEChasePropagatesBlockedState(t *testing.T) {
 	if _, err := store.Add("alias.test", "CNAME", "blocked.test"); err != nil {
 		t.Fatal(err)
 	}
-	h.srv.cfg.Rewrites = store
+	h := startFilteredServerWithRewrites(t, "nxdomain", store)
 
 	resp := h.query("alias.test", dns.TypeA)
 	if resp.Rcode != dns.RcodeNameError {

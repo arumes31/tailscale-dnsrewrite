@@ -1,7 +1,9 @@
+# syntax=docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
+
 ARG VERSION=2.4.28
 
 # Stage 1: Build
-FROM golang:1.26.6-alpine AS builder
+FROM golang:1.27-alpine3.24@sha256:4c9fe60190a2a3350ddc51de80d0224b8a6698d12bdfc999fee45ea9d6c46dbc AS builder
 
 ARG VERSION
 ARG BUILD_INFO=local
@@ -22,8 +24,29 @@ COPY webgui/ .
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath \
     -ldflags="-s -w -X main.Version=${VERSION} -X main.BuildInfo=${BUILD_INFO}" -o resolix .
 
+# Rebuild Tailscale at the reviewed release commit with the patched x/image
+# dependency. The upstream v1.102.3 CLI binary embeds x/image v0.41.0
+# (CVE-2026-46602), even though its standard library is current.
+FROM golang:1.27-alpine3.24@sha256:4c9fe60190a2a3350ddc51de80d0224b8a6698d12bdfc999fee45ea9d6c46dbc AS tailscale-builder
+
+RUN apk add --no-cache git
+RUN git clone --depth 1 --branch v1.102.3 https://github.com/tailscale/tailscale.git /src/tailscale \
+    && test "$(git -C /src/tailscale rev-parse refs/tags/v1.102.3)" = "9329c3677031109ff6d0b80abee0cddc8f35ff6f" \
+    && test "$(git -C /src/tailscale rev-parse HEAD)" = "53a0d659afa51835dd7a9283873cca44261454f8"
+
+WORKDIR /src/tailscale
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    go get golang.org/x/image@v0.45.0 \
+    && CGO_ENABLED=0 go build -trimpath \
+      -ldflags="-s -w -X tailscale.com/version.longStamp=1.102.3 -X tailscale.com/version.shortStamp=1.102.3 -X tailscale.com/version.gitCommitStamp=53a0d659afa51835dd7a9283873cca44261454f8" \
+      -o /out/tailscale ./cmd/tailscale \
+    && CGO_ENABLED=0 go build -trimpath \
+      -ldflags="-s -w -X tailscale.com/version.longStamp=1.102.3 -X tailscale.com/version.shortStamp=1.102.3 -X tailscale.com/version.gitCommitStamp=53a0d659afa51835dd7a9283873cca44261454f8" \
+      -o /out/tailscaled ./cmd/tailscaled
+
 # Stage 2: Final Image
-FROM alpine:3.24
+FROM alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
 
 ARG VERSION
 ARG BUILD_INFO=local
@@ -36,17 +59,22 @@ LABEL org.opencontainers.image.title="Resolix" \
       org.opencontainers.image.source="https://github.com/arumes31/resolix"
 
 # Install runtime dependencies (including those required by Tailscale)
-RUN apk add --no-cache bash bind-tools ca-certificates iptables iproute2 ip6tables
+RUN apk upgrade --no-cache \
+    && apk add --no-cache bash bind-tools ca-certificates iptables iproute2 ip6tables libcap su-exec \
+    && addgroup -S -g 10001 resolix \
+    && adduser -S -D -H -u 10001 -G resolix resolix
 
-# Copy Tailscale binaries from the latest stable release.
-COPY --from=tailscale/tailscale:v1.102.2 /usr/local/bin/tailscale /usr/bin/tailscale
-COPY --from=tailscale/tailscale:v1.102.2 /usr/local/bin/tailscaled /usr/sbin/tailscaled
+# Copy the patched Tailscale binaries built above.
+COPY --from=tailscale-builder /out/tailscale /usr/bin/tailscale
+COPY --from=tailscale-builder /out/tailscaled /usr/sbin/tailscaled
 
 # Copy binary from builder
 COPY --from=builder /app/resolix /usr/bin/resolix
+RUN setcap cap_net_bind_service=+ep /usr/bin/resolix
 
 # Create the persistent Resolix state directories.
 RUN mkdir -p /var/lib/resolix /var/lib/resolix-config /var/lib/resolix-tls \
+    && chown -R 10001:10001 /var/lib/resolix /var/lib/resolix-config /var/lib/resolix-tls \
     && chmod 750 /var/lib/resolix \
     && chmod 750 /var/lib/resolix-config \
     && chmod 700 /var/lib/resolix-tls \
