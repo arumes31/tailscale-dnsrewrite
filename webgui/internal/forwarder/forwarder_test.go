@@ -365,6 +365,38 @@ func TestEnqueue_MaxBacklogSize(t *testing.T) {
 	}
 }
 
+func TestEnqueue_DoesNotBlockWhenBacklogBusy(t *testing.T) {
+	cfg := &config.Config{
+		Mode:           config.ModeAgent,
+		ControllerURL:  "http://localhost:12345",
+		NodeName:       "test-node",
+		MaxBacklogSize: 2048,
+	}
+	fwd := NewForwarder(cfg)
+	fwd.backlogMu.Lock()
+
+	done := make(chan struct{})
+	go func() {
+		fwd.EnqueueEvent(models.QueryEvent{Domain: "controller-down.example.com"})
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		fwd.backlogMu.Unlock()
+		t.Fatal("EnqueueEvent blocked the DNS path while the forwarding backlog was busy")
+	}
+	fwd.backlogMu.Unlock()
+
+	if got := fwd.dropped.Load(); got != 1 {
+		t.Fatalf("dropped events = %d, want 1", got)
+	}
+	if got := fwd.SnapshotStatus(time.Now()).BacklogDepth; got != 0 {
+		t.Fatalf("backlog depth = %d, want 0", got)
+	}
+}
+
 func TestSendBatch_Success(t *testing.T) {
 	var receivedEvents []models.QueryEvent
 	var requestCount atomic.Int32

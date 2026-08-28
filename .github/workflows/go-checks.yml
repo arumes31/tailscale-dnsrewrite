@@ -10,8 +10,16 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: go-checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GOTOOLCHAIN: local
+
 jobs:
-  check:
+  core:
+    name: Core Go checks
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     steps:
@@ -26,62 +34,54 @@ jobs:
           go-version-file: 'webgui/go.mod'
           cache-dependency-path: 'webgui/go.sum'
 
-      - name: Check version consistency
-        shell: bash
-        run: |
-          app_version="$(tr -d '[:space:]' < webgui/VERSION)"
-          docker_version="$(sed -n 's/^ARG VERSION=//p' Dockerfile | head -n 1)"
-          if [[ ! "${app_version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "webgui/VERSION must contain a stable semantic version (X.Y.Z)" >&2
-            exit 1
-          fi
-          if [[ "${docker_version}" != "${app_version}" ]]; then
-            echo "Dockerfile version ${docker_version} does not match application version ${app_version}" >&2
-            exit 1
-          fi
+      - name: Validate formatting, modules, vet, build, tests, and coverage
+        run: bash ./contrib/validate.sh core
 
-      - name: Check formatting
-        shell: bash
-        run: test -z "$(gofmt -l .)"
-        working-directory: webgui
+  static-analysis:
+    name: ${{ matrix.check }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        check: [lint, security, licenses, workflows]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - name: Verify module integrity and tidiness
-        shell: bash
-        run: |
-          go mod verify
-          go mod tidy -diff
-        working-directory: webgui
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: 'webgui/go.mod'
+          cache-dependency-path: 'webgui/go.sum'
 
-      - name: Build
-        run: go build ./...
-        working-directory: webgui
+      - name: Run ${{ matrix.check }} validation
+        run: bash ./contrib/validate.sh "${{ matrix.check }}"
 
-      - name: Test with coverage
-        shell: bash
-        run: |
-          go test -race -coverprofile=coverage.out -covermode=atomic ./...
-          total="$(go tool cover -func=coverage.out | awk '/^total:/ {gsub(/%/, "", $3); print $3}')"
-          awk -v total="${total}" 'BEGIN { if (total < 45) { printf "coverage %.1f%% is below 45%%\n", total; exit 1 } }'
-        working-directory: webgui
+  frontend:
+    name: Frontend tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - name: Run govulncheck
-        run: go install golang.org/x/vuln/cmd/govulncheck@v1.7.0 && govulncheck ./...
-        working-directory: webgui
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
 
-      - name: Run gosec
-        run: go install github.com/securego/gosec/v2/cmd/gosec@v2.28.0 && gosec ./...
-        working-directory: webgui
-
-      - name: Run golangci-lint
-        run: |
-          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2
-          $(go env GOPATH)/bin/golangci-lint run
-        working-directory: webgui
+      - name: Run frontend tests
+        run: bash ./contrib/validate.sh frontend
 
   docker-smoke:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
-    needs: check
+    needs: [core, static-analysis, frontend]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

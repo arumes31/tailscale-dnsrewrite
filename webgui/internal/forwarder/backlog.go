@@ -308,7 +308,10 @@ func (f *Forwarder) flushBacklog() error {
 	return nil
 }
 
-// EnqueueEvent adds a query event to the forwarding queue.
+// EnqueueEvent adds a query event to the forwarding queue without applying
+// controller or persistence backpressure to the DNS response path. Telemetry
+// is dropped when the backlog is busy so DNS remains available during an
+// extended controller outage.
 func (f *Forwarder) EnqueueEvent(ev models.QueryEvent) {
 	if f.cfg.Mode != config.ModeAgent || f.cfg.ControllerURL == "" {
 		return
@@ -317,7 +320,10 @@ func (f *Forwarder) EnqueueEvent(ev models.QueryEvent) {
 		ev.Node = f.cfg.NodeName
 	}
 	item := backlogItem{event: ev, size: eventJSONSize(ev), queuedAt: time.Now()}
-	f.backlogMu.Lock()
+	if !f.backlogMu.TryLock() {
+		f.dropped.Add(1)
+		return
+	}
 
 	// Enforce a maximum backlog size in bytes to prevent OOM (only when limit is configured)
 	if f.cfg.MaxBacklogSize > 0 && f.backlogTotalSize+item.size > f.cfg.MaxBacklogSize {

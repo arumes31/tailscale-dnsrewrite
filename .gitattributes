@@ -4,6 +4,8 @@
 # Force LF for files that will run inside Linux containers
 *.go text eol=lf
 *.sh text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
 Dockerfile text eol=lf
 Dockerfile.* text eol=lf
 entrypoint.sh text eol=lf

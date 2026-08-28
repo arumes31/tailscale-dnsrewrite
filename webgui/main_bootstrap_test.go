@@ -555,7 +555,9 @@ func availableTCPPort(t *testing.T) int {
 
 func availableDualProtocolPort(t *testing.T) int {
 	t.Helper()
-	for range 10 {
+	// TCP and UDP ephemeral ports are allocated independently. Concurrent package
+	// tests can occupy several otherwise valid cross-protocol candidates on Windows.
+	for range 100 {
 		tcpListener, err := net.Listen("tcp", "127.0.0.1:0")
 		if err != nil {
 			t.Fatal(err)

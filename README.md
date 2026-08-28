@@ -522,15 +522,10 @@ Common startup failures:
 ## Development
 
 ```bash
-cd webgui
-go build ./...
-go test ./...
-govulncheck ./...
-gosec ./...
-golangci-lint run
+bash ./contrib/validate.sh all
 ```
 
-The CI gate also enforces formatting, at least 45% test coverage, and a Docker smoke test covering allowed and blocked queries over UDP, TCP, DoH, and DoT.
+The validator installs pinned analysis tools into a temporary cache and runs formatting, module integrity, `go vet`, build, race tests, at least 45% coverage, golangci-lint, govulncheck, gosec, dependency-license checks, GitHub workflow linting, and frontend tests. Individual checks can be selected with `core`, `lint`, `security`, `licenses`, `workflows`, or `frontend`. CI also runs a Docker smoke test covering allowed and blocked queries over UDP, TCP, DoH, and DoT.
 
 ## Contributing
 
