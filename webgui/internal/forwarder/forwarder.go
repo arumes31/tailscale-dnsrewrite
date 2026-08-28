@@ -94,6 +94,7 @@ type Forwarder struct {
 	retries          atomic.Int64
 	dropped          atomic.Int64
 	sent             atomic.Int64
+	dropNewEvents    atomic.Bool
 	adaptiveBatch    atomic.Int64
 	clockSkewNanos   atomic.Int64
 

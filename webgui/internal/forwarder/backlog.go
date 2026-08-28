@@ -316,6 +316,10 @@ func (f *Forwarder) EnqueueEvent(ev models.QueryEvent) {
 	if f.cfg.Mode != config.ModeAgent || f.cfg.ControllerURL == "" {
 		return
 	}
+	if f.dropNewEvents.Load() {
+		f.dropped.Add(1)
+		return
+	}
 	if ev.Node == "" {
 		ev.Node = f.cfg.NodeName
 	}

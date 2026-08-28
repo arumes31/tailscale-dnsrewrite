@@ -151,7 +151,13 @@ func gzipCompress(data []byte) ([]byte, bool) {
 // ingest format); health-only payloads keep the legacy object shape.
 func (f *Forwarder) sendBatch(client *http.Client, events []models.QueryEvent, health map[string]float64) (resultErr error) {
 	started := time.Now()
-	defer func() { f.recordEndpoint("ingest", started, resultErr) }()
+	defer func() {
+		f.recordEndpoint("ingest", started, resultErr)
+		// A failed ingest freezes admission so a prolonged outage cannot grow
+		// the persistent backlog. Health-only reports use this same endpoint and
+		// reopen admission after the controller recovers.
+		f.dropNewEvents.Store(resultErr != nil)
+	}()
 	var data []byte
 	var err error
 	if len(events) > 0 {

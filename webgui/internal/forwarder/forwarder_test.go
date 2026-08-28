@@ -423,12 +423,16 @@ func TestSendBatch_Success(t *testing.T) {
 		BaseURL:       "",
 	}
 	fwd := NewForwarder(cfg)
+	fwd.dropNewEvents.Store(true)
 
 	client := server.Client()
 	events := testEvents("one.example.com", "two.example.com", "three.example.com")
 	err := fwd.sendBatch(client, events, nil)
 	if err != nil {
 		t.Fatalf("sendBatch failed: %v", err)
+	}
+	if fwd.dropNewEvents.Load() {
+		t.Fatal("successful ingest did not reopen backlog admission")
 	}
 
 	if requestCount.Load() != 1 {
@@ -518,11 +522,23 @@ func TestSendBatch_ServerError(t *testing.T) {
 		BaseURL:       "",
 	}
 	fwd := NewForwarder(cfg)
+	fwd.EnqueueEvent(models.QueryEvent{Domain: "retained.example.com"})
 
 	client := server.Client()
 	err := fwd.sendBatch(client, testEvents("line1.example.com"), nil)
 	if err == nil {
 		t.Error("expected error for 500 response, got nil")
+	}
+	if !fwd.dropNewEvents.Load() {
+		t.Fatal("failed ingest did not freeze backlog admission")
+	}
+	fwd.EnqueueEvent(models.QueryEvent{Domain: "dropped.example.com"})
+	status := fwd.SnapshotStatus(time.Now())
+	if status.BacklogDepth != 1 {
+		t.Fatalf("backlog depth grew during controller outage: got %d, want 1", status.BacklogDepth)
+	}
+	if status.Dropped != 1 {
+		t.Fatalf("dropped events = %d, want 1", status.Dropped)
 	}
 }
 
@@ -567,12 +583,20 @@ func TestSendBatch_WithHealth(t *testing.T) {
 		BaseURL:       "",
 	}
 	fwd := NewForwarder(cfg)
+	fwd.dropNewEvents.Store(true)
 
 	client := server.Client()
 	health := map[string]float64{"8.8.8.8": 15.5, "1.1.1.1": 8.2}
 	err := fwd.sendBatch(client, nil, health)
 	if err != nil {
 		t.Fatalf("sendBatch with health failed: %v", err)
+	}
+	if fwd.dropNewEvents.Load() {
+		t.Fatal("successful health ingest did not reopen backlog admission")
+	}
+	fwd.EnqueueEvent(models.QueryEvent{Domain: "recovered.example.com"})
+	if got := fwd.SnapshotStatus(time.Now()).BacklogDepth; got != 1 {
+		t.Fatalf("backlog depth after recovery = %d, want 1", got)
 	}
 
 	if len(receivedHealth) != 2 {
