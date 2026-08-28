@@ -60,9 +60,7 @@ LABEL org.opencontainers.image.title="Resolix" \
 
 # Install runtime dependencies (including those required by Tailscale)
 RUN apk upgrade --no-cache \
-    && apk add --no-cache bash bind-tools ca-certificates iptables iproute2 ip6tables libcap su-exec \
-    && addgroup -S -g 10001 resolix \
-    && adduser -S -D -H -u 10001 -G resolix resolix
+    && apk add --no-cache bash bind-tools ca-certificates iptables iproute2 ip6tables
 
 # Copy the patched Tailscale binaries built above.
 COPY --from=tailscale-builder /out/tailscale /usr/bin/tailscale
@@ -70,11 +68,9 @@ COPY --from=tailscale-builder /out/tailscaled /usr/sbin/tailscaled
 
 # Copy binary from builder
 COPY --from=builder /app/resolix /usr/bin/resolix
-RUN setcap cap_net_bind_service=+ep /usr/bin/resolix
 
 # Create the persistent Resolix state directories.
 RUN mkdir -p /var/lib/resolix /var/lib/resolix-config /var/lib/resolix-tls \
-    && chown -R 10001:10001 /var/lib/resolix /var/lib/resolix-config /var/lib/resolix-tls \
     && chmod 750 /var/lib/resolix \
     && chmod 750 /var/lib/resolix-config \
     && chmod 700 /var/lib/resolix-tls \

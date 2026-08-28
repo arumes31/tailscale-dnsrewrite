@@ -103,10 +103,7 @@ fi
 # Start Resolix with the embedded DNS server (dnsmasq is no longer used)
 DNS_EFFECTIVE_ADDR=${DNS_LISTEN_ADDR:-${TAILSCALE_IP:-0.0.0.0}}
 echo "Starting Resolix (embedded DNS server on ${DNS_EFFECTIVE_ADDR}:${DNS_LISTEN_PORT:-53})..."
-# tailscaled needs root for kernel networking, but the DNS/web application does
-# not. Run Resolix as its dedicated user; the binary only retains the narrowly
-# scoped capability needed to bind DNS port 53.
-su-exec resolix /usr/bin/resolix &
+/usr/bin/resolix &
 RESOLIX_PID=$!
 
 echo "Processes started: Resolix(PID:$RESOLIX_PID), tailscaled(PID:$TAILSCALED_PID)"

@@ -79,8 +79,6 @@ docker run --rm --entrypoint sh resolix:smoke -c '
 # requiring access to a real tailnet or auth key.
 docker volume create "${socket_volume}" >/dev/null
 mkdir -p "${smoke_dir}/config"
-# The host runner owns this ephemeral bind mount; allow the non-root process to
-# exercise configuration persistence without weakening production directories.
 chmod 0777 "${smoke_dir}/config"
 MSYS_NO_PATHCONV=1 docker run -d --name "${socket_container}" \
   -v "${socket_volume}:/var/run/tailscale" \
@@ -138,13 +136,10 @@ if ! curl --fail --silent "http://127.0.0.1:${web_port}/readyz" >/dev/null; then
   exit 1
 fi
 
-# Keep the Tailscale daemon's required kernel-network privilege separate from
-# the DNS/web process. A regression to running Resolix itself as root should
-# fail the image smoke test.
 resolix_pid="$(docker exec "${container_name}" pidof resolix)"
 resolix_uid="$(docker exec "${container_name}" stat -c '%u' "/proc/${resolix_pid}")"
-if [[ "${resolix_uid}" != "10001" ]]; then
-  echo "Resolix runs as UID ${resolix_uid}, want dedicated UID 10001" >&2
+if [[ "${resolix_uid}" != "0" ]]; then
+  echo "Resolix runs as UID ${resolix_uid}, want root UID 0" >&2
   exit 1
 fi
 
