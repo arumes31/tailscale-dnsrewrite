@@ -3,7 +3,7 @@
 ARG VERSION=2.4.28
 
 # Stage 1: Build
-FROM golang:1.27-alpine3.24@sha256:4c9fe60190a2a3350ddc51de80d0224b8a6698d12bdfc999fee45ea9d6c46dbc AS builder
+FROM golang:1.27-alpine3.24@sha256:26402d86be3d72e6a9410afa0108f03529f51f0c1b5eb7f503d0bc44cc7857ac AS builder
 
 ARG VERSION
 ARG BUILD_INFO=local
@@ -27,7 +27,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath \
 # Rebuild Tailscale at the reviewed release commit with the patched x/image
 # dependency. The upstream v1.102.3 CLI binary embeds x/image v0.41.0
 # (CVE-2026-46602), even though its standard library is current.
-FROM golang:1.27-alpine3.24@sha256:4c9fe60190a2a3350ddc51de80d0224b8a6698d12bdfc999fee45ea9d6c46dbc AS tailscale-builder
+FROM golang:1.27-alpine3.24@sha256:26402d86be3d72e6a9410afa0108f03529f51f0c1b5eb7f503d0bc44cc7857ac AS tailscale-builder
 
 RUN apk add --no-cache git
 RUN git clone --depth 1 --branch v1.102.3 https://github.com/tailscale/tailscale.git /src/tailscale \
